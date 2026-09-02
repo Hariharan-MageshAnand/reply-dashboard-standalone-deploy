@@ -1,0 +1,502 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum WorkspaceRole {
+  owner
+  admin
+  member
+}
+
+enum MailboxHealth {
+  healthy
+  syncing
+  auth_required
+  error
+  disconnected
+}
+
+enum ConversationStatus {
+  open
+  snoozed
+  archived
+  closed
+}
+
+enum ReplyStatus {
+  awaiting_reply
+  replied
+  needs_attention
+  none
+}
+
+enum MessageDirection {
+  inbound
+  outbound
+}
+
+enum OutboundSendStatus {
+  sending
+  sent
+  failed
+}
+
+enum ScheduledSendStatus {
+  scheduled
+  // Claimed by the due-send processor; sits between scheduled and sent/failed.
+  // Auto-cancel and operator cancel only touch 'scheduled', so a row can never
+  // be cancelled while (or after) its send is in flight.
+  processing
+  sent
+  cancelled
+  failed
+}
+
+enum ApprovalStatus {
+  pending
+  approved
+  changes_requested
+  overridden
+}
+
+enum ReplyLabel {
+  interested
+  interested_more_info
+  not_interested
+  ooo
+  wrong_person
+  unsubscribe
+  auto_reply
+  needs_review
+}
+
+enum MailboxProvider {
+  google
+  microsoft
+}
+
+model User {
+  id              String   @id @default(cuid())
+  authKey         String   @unique @map("clerkUserId")
+  email           String
+  firstName       String?
+  lastName        String?
+  fullName        String?
+  profilePhotoUrl String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  memberships  WorkspaceMember[]
+  assignments  ConversationAssignment[]
+  drafts       ReplyDraft[]
+  auditLogs    AuditLog[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model Workspace {
+  id             String   @id @default(cuid())
+  name           String
+  slug           String   @unique
+  warmupKeywords    String[] @default([])
+  slaMinutes        Int      @default(60)
+  sourcingLeadEmail String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  members       WorkspaceMember[]
+  mailboxes     SenderMailbox[]
+  conversations Conversation[]
+  labels        ConversationLabelDef[]
+  campaigns     OutreachCampaign[]
+  auditLogs     AuditLog[]
+
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  id          String        @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        WorkspaceRole @default(member)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+  @@map("workspace_members")
+}
+
+model SenderMailbox {
+  id                    String          @id @default(cuid())
+  workspaceId           String
+  provider              MailboxProvider @default(google)
+  email                 String
+  displayName           String?
+  providerSubjectId     String?         @map("googleSubjectId")
+  accessTokenEncrypted  String?
+  refreshTokenEncrypted String?
+  tokenExpiryAt         DateTime?
+  scopes                String?
+  health                MailboxHealth   @default(syncing)
+  canRead               Boolean         @default(false)
+  canModify             Boolean         @default(false)
+  canSend               Boolean         @default(false)
+  lastError             String?
+  connectedAt           DateTime        @default(now())
+  disconnectedAt        DateTime?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  workspace     Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  syncState     MailboxSyncState?
+  conversations Conversation[]
+  messages      Message[]
+
+  @@unique([workspaceId, email])
+  @@index([workspaceId, health])
+  @@index([workspaceId, provider])
+  @@map("sender_mailboxes")
+}
+
+model MailboxSyncState {
+  id              String    @id @default(cuid())
+  mailboxId       String    @unique
+  historyId       String?
+  lastSyncedAt    DateTime?
+  initialSyncDone Boolean   @default(false)
+  watchExpiration DateTime?
+  syncCursor      String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  mailbox SenderMailbox @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+
+  @@map("mailbox_sync_states")
+}
+
+model OutreachCampaign {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+
+  @@unique([workspaceId, name])
+  @@map("outreach_campaigns")
+}
+
+model Conversation {
+  id                 String             @id @default(cuid())
+  workspaceId        String
+  mailboxId          String
+  gmailThreadId      String
+  subject            String             @default("(no subject)")
+  snippet            String             @default("")
+  unread             Boolean            @default(true)
+  status             ConversationStatus @default(open)
+  replyStatus        ReplyStatus        @default(awaiting_reply)
+  snoozedUntil       DateTime?
+  sendLockedAt       DateTime?
+  currentLabel       ReplyLabel?
+  labelPriority      Int                @default(3)
+  isWarmup           Boolean            @default(false)
+  slaBreachedAt      DateTime?
+  lastMessageAt      DateTime           @default(now())
+  messageCount       Int                @default(0)
+  outreachCampaignId String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  workspace        Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  mailbox          SenderMailbox             @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+  outreachCampaign OutreachCampaign?         @relation(fields: [outreachCampaignId], references: [id], onDelete: SetNull)
+  participants     ConversationParticipant[]
+  messages         Message[]
+  labels           ConversationLabel[]
+  assignment       ConversationAssignment?
+  draft            ReplyDraft?
+  outboundSends    OutboundSend[]
+  scheduledSends   ScheduledSend[]
+  classifications  ReplyClassification[]
+  aiDrafts         AiDraft[]
+  approvalRequests ApprovalRequest[]
+
+  @@unique([mailboxId, gmailThreadId])
+  @@index([workspaceId, lastMessageAt])
+  @@index([workspaceId, unread])
+  @@index([workspaceId, status])
+  @@index([workspaceId, replyStatus])
+  @@index([workspaceId, currentLabel])
+  @@index([workspaceId, labelPriority, lastMessageAt])
+  @@index([workspaceId, isWarmup])
+  @@index([status, snoozedUntil])
+  @@map("conversations")
+}
+
+model ConversationParticipant {
+  id             String  @id @default(cuid())
+  conversationId String
+  email          String
+  name           String?
+  role           String
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([email])
+  @@map("conversation_participants")
+}
+
+model Message {
+  id              String           @id @default(cuid())
+  conversationId  String
+  mailboxId       String
+  gmailMessageId  String
+  gmailThreadId   String
+  direction       MessageDirection
+  fromEmail       String
+  fromName        String?
+  toJson          Json
+  ccJson          Json?
+  subject         String
+  bodyHtml        String?
+  bodyText        String?
+  rfcMessageId    String?
+  inReplyTo       String?
+  referencesHeader String?
+  sentAt          DateTime
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  conversation Conversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  mailbox      SenderMailbox       @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+  attachments  MessageAttachment[]
+
+  @@unique([mailboxId, gmailMessageId])
+  @@index([conversationId, sentAt])
+  @@index([gmailThreadId])
+  @@map("messages")
+}
+
+model MessageAttachment {
+  id        String @id @default(cuid())
+  messageId String
+  filename  String
+  mimeType  String
+  sizeBytes Int
+  gmailAttachmentId String?
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@map("message_attachments")
+}
+
+model ConversationLabelDef {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  color       String?
+  createdAt   DateTime @default(now())
+
+  workspace Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  links     ConversationLabel[]
+
+  @@unique([workspaceId, name])
+  @@map("conversation_label_defs")
+}
+
+model ConversationLabel {
+  id             String @id @default(cuid())
+  conversationId String
+  labelId        String
+
+  conversation Conversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  label        ConversationLabelDef @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, labelId])
+  @@map("conversation_labels")
+}
+
+model ConversationAssignment {
+  id             String   @id @default(cuid())
+  conversationId String   @unique
+  assigneeId     String
+  assignedAt     DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  assignee     User         @relation(fields: [assigneeId], references: [id], onDelete: Cascade)
+
+  @@index([assigneeId])
+  @@map("conversation_assignments")
+}
+
+model ReplyDraft {
+  id             String   @id @default(cuid())
+  conversationId String   @unique
+  authorId       String
+  bodyHtml       String   @default("")
+  bodyText       String   @default("")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  author       User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@map("reply_drafts")
+}
+
+model OutboundSend {
+  id                String             @id @default(cuid())
+  conversationId    String
+  authorId          String
+  idempotencyKey    String             @unique
+  status            OutboundSendStatus @default(sending)
+  bodyHtml          String
+  bodyText          String
+  errorMessage      String?
+  providerMessageId String?
+  sentAt            DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, status])
+  @@index([status, createdAt])
+  @@map("outbound_sends")
+}
+
+model ReplyClassification {
+  id                String     @id @default(cuid())
+  conversationId    String
+  messageId         String     @unique
+  aiLabel           ReplyLabel
+  aiConfidence      Float
+  aiRationale       String?
+  finalLabel        ReplyLabel
+  extractedMetadata Json?
+  model             String?
+  correctedById     String?
+  correctedAt       DateTime?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@index([finalLabel])
+  @@map("reply_classifications")
+}
+
+model AiDraft {
+  id             String   @id @default(cuid())
+  conversationId String
+  draftText      String
+  instruction    String?
+  model          String?
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@map("ai_drafts")
+}
+
+model ApprovalRequest {
+  id             String         @id @default(cuid())
+  conversationId String
+  draftSnapshot  String
+  requestedById  String
+  sentToEmail    String
+  status         ApprovalStatus @default(pending)
+  approveToken   String         @unique
+  changesToken   String         @unique
+  requestedAt    DateTime       @default(now())
+  reminderSentAt DateTime?
+  resolvedAt     DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  conversation Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  comments     ApprovalComment[]
+
+  @@index([conversationId, status])
+  @@index([status, requestedAt])
+  @@map("approval_requests")
+}
+
+model ApprovalComment {
+  id                     String   @id @default(cuid())
+  approvalRequestId      String
+  commentText            String?
+  draftSnapshotAtComment String
+  createdAt              DateTime @default(now())
+
+  request ApprovalRequest @relation(fields: [approvalRequestId], references: [id], onDelete: Cascade)
+
+  @@index([approvalRequestId, createdAt])
+  @@map("approval_comments")
+}
+
+model ScheduledSend {
+  id             String              @id @default(cuid())
+  conversationId String
+  authorId       String
+  bodyHtml       String
+  bodyText       String
+  scheduledFor   DateTime
+  status         ScheduledSendStatus @default(scheduled)
+  cancelReason   String?
+  errorMessage   String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, status])
+  @@index([status, scheduledFor])
+  @@map("scheduled_sends")
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  workspaceId String
+  actorId     String?
+  action      String
+  entityType  String
+  entityId    String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  actor     User?     @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@map("audit_logs")
+}
+
+model IdempotencyKey {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  scope     String
+  resultJson Json?
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}

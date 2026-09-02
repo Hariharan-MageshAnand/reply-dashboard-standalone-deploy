@@ -1,0 +1,15 @@
+node_modules
+**/node_modules
+.git
+.env
+**/.env
+backend/dist
+packages/contracts/dist
+frontend/dist
+frontend/src
+frontend/index.html
+frontend/vite.config.ts
+frontend/tsconfig*.json
+frontend/src
+*.md
+.cursor

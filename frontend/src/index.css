@@ -1,0 +1,350 @@
+:root {
+  --background: #f7f5ee;
+  --foreground: #163a24;
+  --card: rgba(253, 252, 247, 0.92);
+  --card-solid: #fdfcf7;
+  --muted: #e8efe3;
+  --muted-foreground: #787d77;
+  --primary: #6b9137;
+  --primary-foreground: #f7f5ee;
+  --border: #c3b960;
+  --border-soft: rgba(213, 207, 165, 0.55);
+  --ring: #6b9137;
+  --danger: #b42318;
+  --sidebar: #f3f0e4;
+  --unread: #163a24;
+  --shadow: 0 8px 32px rgba(22, 58, 36, 0.04);
+  --radius: 12px;
+  --font-sans: "Neue Haas Grotesk Text", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: "Martina Plantijn", "Iowan Old Style", Georgia, serif;
+  color: var(--foreground);
+  background: var(--background);
+  font-family: var(--font-sans);
+  /* Compact scale to match the demo's density. */
+  font-size: 14.5px;
+  line-height: 1.5;
+  letter-spacing: 0.01em;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--background);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 56px minmax(300px, 380px) 1fr;
+  /* App frame: the shell owns the viewport; each pane scrolls internally. */
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--background);
+}
+
+@media (max-width: 1024px) {
+  .app-shell {
+    grid-template-columns: 56px minmax(240px, 320px) 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+  .app-shell.thread-open .list-pane,
+  .app-shell.thread-open .sidebar-pane {
+    display: none;
+  }
+  .app-shell:not(.thread-open) .thread-pane {
+    display: none;
+  }
+}
+
+.sidebar-pane,
+.list-pane,
+.thread-pane {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--border-soft);
+}
+
+.sidebar-pane {
+  overflow-y: auto;
+}
+
+/* Full-width pages (Mailboxes, Settings, Onboarding) scroll their content
+   area, not the document. */
+.app-shell > main {
+  height: 100dvh;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.list-pane-wrap {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.list-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
+.sidebar-pane {
+  background: var(--sidebar);
+  padding: 20px 14px;
+}
+
+.icon-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 0 16px;
+}
+
+.rail-logo {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #86ab4d, #3f5c28);
+}
+
+.rail-btn {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+}
+
+.rail-btn:hover {
+  background: rgba(22, 58, 36, 0.08);
+}
+
+.rail-active {
+  background: rgba(22, 58, 36, 0.12);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+/* Top bar (demo layout): global search + mailbox status. */
+.app-frame {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 52px;
+  flex-shrink: 0;
+  padding: 0 16px;
+  background: var(--card-solid);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.app-frame .app-shell {
+  height: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.app-frame .sidebar-pane,
+.app-frame .list-pane-wrap,
+.app-frame .thread-pane {
+  height: 100%;
+}
+
+/* Chat-style message rows */
+.msg-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(22, 58, 36, 0.1);
+  color: var(--foreground);
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.list-pane,
+.thread-pane {
+  background: var(--background);
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.btn-primary {
+  background: var(--foreground);
+  color: var(--primary-foreground);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #0f2818;
+}
+
+.btn-secondary {
+  background: transparent;
+  border-color: var(--border-soft);
+  color: var(--foreground);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--muted);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--foreground);
+  border-color: transparent;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: rgba(22, 58, 36, 0.06);
+}
+
+.input,
+.textarea {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px 12px;
+  color: var(--foreground);
+}
+
+.textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.display-title {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+
+.muted {
+  color: var(--muted-foreground);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  padding: 2px 10px;
+  background: var(--muted);
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.badge-warn {
+  background: rgba(195, 185, 96, 0.35);
+}
+
+.badge-ok {
+  background: rgba(107, 145, 55, 0.2);
+}
+
+.badge-danger {
+  background: rgba(180, 35, 24, 0.12);
+  color: var(--danger);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
