@@ -9,6 +9,7 @@ import {
 import { prisma } from './lib/prisma.js';
 import { syncMailbox } from './services/sync.service.js';
 import { resurfaceDueSnoozed } from './services/conversation.service.js';
+import { sweepSalesforceMatches } from './services/salesforce.service.js';
 import { processDueScheduledSends } from './services/send.service.js';
 import { classifyInboundMessage } from './services/ai.service.js';
 import { tagSlaBreaches } from './services/sla.service.js';
@@ -58,6 +59,11 @@ const maintenanceWorker = new Worker(
       const sent = await processApprovalReminders();
       if (sent) console.log(`sent ${sent} approval reminder(s)`);
       return { sent };
+    }
+    if (job.name === MAINTENANCE_JOBS.salesforceSweep) {
+      const checked = await sweepSalesforceMatches();
+      if (checked) console.log(`salesforce-checked ${checked} conversation(s)`);
+      return { checked };
     }
     return {};
   },

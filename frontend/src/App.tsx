@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SessionProvider } from './lib/session';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { AssignmentDeskPage } from './pages/AssignmentDeskPage';
 import { LoginPage } from './pages/LoginPage';
 import { OnboardingPage } from './pages/OnboardingPage';
 import { InboxPage } from './pages/InboxPage';
@@ -26,6 +27,7 @@ function AppRoutes() {
         <Route path="/onboarding" element={<OnboardingPage />} />
         <Route path="/inbox" element={<InboxPage />} />
         <Route path="/inbox/:conversationId" element={<InboxPage />} />
+        <Route path="/meetings/assign" element={<AssignmentDeskPage />} />
         <Route path="/settings/mailboxes" element={<MailboxesPage />} />
         <Route path="/mailboxes" element={<Navigate to="/settings/mailboxes" replace />} />
         <Route path="/settings/team" element={<TeamSettingsPage />} />

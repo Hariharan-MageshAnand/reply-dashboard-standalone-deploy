@@ -51,7 +51,7 @@ export function OnboardingPage() {
   const count = mailboxes.data?.items.length ?? 0;
 
   return (
-    <div className="app-shell" style={{ gridTemplateColumns: '56px 1fr' }}>
+    <div className="app-shell" style={{ gridTemplateColumns: '190px 1fr' }}>
       <Sidebar />
       <main style={{ padding: 32, maxWidth: 720 }}>
         <h1 className="display-title" style={{ fontSize: 32, marginTop: 0 }}>

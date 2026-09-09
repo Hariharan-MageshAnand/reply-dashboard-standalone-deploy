@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { MailboxProvider } from '@reply/contracts';
 import { Sidebar } from '../components/Sidebar';
-import { mailboxApi } from '../lib/services';
+import { mailboxApi, salesforceApi } from '../lib/services';
 import { ApiClientError } from '../lib/api';
 
 export function MailboxesPage() {
@@ -77,7 +77,7 @@ export function MailboxesPage() {
   });
 
   return (
-    <div className="app-shell" style={{ gridTemplateColumns: '56px 1fr' }}>
+    <div className="app-shell" style={{ gridTemplateColumns: '190px 1fr' }}>
       <Sidebar />
       <main style={{ padding: 28 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
@@ -208,7 +208,60 @@ export function MailboxesPage() {
             <p className="muted">No mailboxes connected yet.</p>
           )}
         </div>
+
+        <SalesforceStatusCard />
       </main>
+    </div>
+  );
+}
+
+/**
+ * Salesforce is one shared org connection configured on the server — unlike
+ * mailboxes there is nothing per-user to connect, so this card just makes the
+ * connection (and what it powers) visible.
+ */
+function SalesforceStatusCard() {
+  const status = useQuery({
+    queryKey: ['salesforce-status'],
+    queryFn: salesforceApi.status,
+    staleTime: 60_000,
+  });
+  const s = status.data;
+
+  return (
+    <div style={{ marginTop: 24 }}>
+      <h2 className="display-title" style={{ margin: '0 0 8px', fontSize: 20 }}>
+        Salesforce
+      </h2>
+      <article className="card" style={{ padding: 16 }}>
+        {!s && <p className="muted" style={{ margin: 0 }}>Checking connection…</p>}
+        {s && !s.configured && (
+          <p className="muted" style={{ margin: 0 }}>
+            Not configured — the server has no Salesforce credentials.
+          </p>
+        )}
+        {s && s.configured && (
+          <div style={{ display: 'grid', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span className={`badge ${s.connected ? 'badge-ok' : 'badge-danger'}`}>
+                {s.connected ? 'Connected' : 'Connection error'}
+              </span>
+              {s.instanceUrl && (
+                <a href={s.instanceUrl} target="_blank" rel="noreferrer">
+                  {s.instanceUrl.replace('https://', '')}
+                </a>
+              )}
+              {s.username && <span className="muted">as {s.username}</span>}
+            </div>
+            <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+              One shared org connection for the whole workspace, configured on the server —
+              nothing to connect per person. Every conversation automatically looks up the
+              prospect in Salesforce and shows their contact, account (engine, score,
+              industry), sequence, and open opportunities above the thread.
+            </p>
+          </div>
+        )}
+      </article>
     </div>
   );
 }

@@ -43,6 +43,22 @@ const envSchema = z.object({
   RESEND_API_KEY: z.string().optional().default(''),
   EMAIL_FROM: z.string().optional().default('Reply Dashboard <onboarding@resend.dev>'),
   API_PUBLIC_URL: z.string().url().optional(),
+  // Salesforce (username-password + security token flow, same as the
+  // Emergence webapp). All four required for SF_READY.
+  SALESFORCE_USERNAME: z.string().optional().default(''),
+  SALESFORCE_PASSWORD: z.string().optional().default(''),
+  SALESFORCE_SECURITY_TOKEN: z.string().optional().default(''),
+  SALESFORCE_DOMAIN: z.string().optional().default(''),
+  // Google service account (base64 JSON) — calendar reads via domain-wide
+  // delegation for the meeting assignment desk.
+  GOOGLE_SERVICE_ACCOUNT_B64: z.string().optional().default(''),
+  GOOGLE_MEETING_OWNER: z.string().optional().default('meeting@emergence.com'),
+  // In-app meeting booking writes to meeting@emergence.com's calendar via that
+  // user's OAuth refresh token (the exact mechanism the Emergence webapp uses —
+  // the service account only has calendar.readonly delegated, not events write).
+  GOOGLE_OAUTH_CLIENT_ID: z.string().optional().default(''),
+  GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional().default(''),
+  GOOGLE_MEETING_OWNER_REFRESH_TOKEN: z.string().optional().default(''),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -66,5 +82,17 @@ export const env = {
   MICROSOFT_OAUTH_READY: microsoftReady,
   AI_READY: Boolean(parsed.data.ANTHROPIC_API_KEY),
   EMAIL_READY: Boolean(parsed.data.RESEND_API_KEY),
+  CALENDAR_READY: Boolean(parsed.data.GOOGLE_SERVICE_ACCOUNT_B64),
+  MEETING_BOOKING_READY: Boolean(
+    parsed.data.GOOGLE_OAUTH_CLIENT_ID &&
+      parsed.data.GOOGLE_OAUTH_CLIENT_SECRET &&
+      parsed.data.GOOGLE_MEETING_OWNER_REFRESH_TOKEN,
+  ),
+  SF_READY: Boolean(
+    parsed.data.SALESFORCE_USERNAME &&
+      parsed.data.SALESFORCE_PASSWORD &&
+      parsed.data.SALESFORCE_SECURITY_TOKEN &&
+      parsed.data.SALESFORCE_DOMAIN,
+  ),
   API_PUBLIC_URL: parsed.data.API_PUBLIC_URL ?? `http://localhost:${parsed.data.PORT}`,
 };

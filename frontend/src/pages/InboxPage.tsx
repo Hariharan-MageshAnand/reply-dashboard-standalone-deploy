@@ -4,6 +4,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import {
   AlertTriangle,
   Archive,
+  ArchiveRestore,
   BarChart2,
   Bell,
   CalendarClock,
@@ -12,8 +13,11 @@ import {
   ChevronRight,
   ChevronLeft,
   Clock,
+  Mail,
+  MapPin,
   MessageSquare,
   MoreHorizontal,
+  Phone,
   RefreshCw,
   Search,
   SlidersHorizontal,
@@ -29,6 +33,7 @@ import type {
   SenderMailbox,
 } from '@reply/contracts';
 import { useSession } from '../lib/session';
+import { Sidebar } from '../components/Sidebar';
 import { conversationApi, mailboxApi } from '../lib/services';
 import { ApiClientError } from '../lib/api';
 
@@ -59,6 +64,48 @@ const REPLY_LABELS: Record<ReplyLabel, { text: string; className: string; style?
   unsubscribe: { text: 'Unsubscribed', className: 'badge badge-danger' },
   auto_reply: { text: 'Auto reply', className: 'badge', style: { opacity: 0.7 } },
 };
+
+function PanelSectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className="muted"
+      style={{ fontSize: 10.5, letterSpacing: '0.09em', fontWeight: 700, textTransform: 'uppercase' }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function PanelRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
+      <span className="muted" style={{ flexShrink: 0, fontSize: 12 }}>{label}</span>
+      <span
+        style={{
+          textAlign: 'right',
+          fontWeight: 550,
+          minWidth: 0,
+          overflowWrap: 'anywhere',
+          lineHeight: 1.35,
+        }}
+      >
+        {children}
+      </span>
+    </div>
+  );
+}
+
+function PanelContactLine({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <span
+      className="muted"
+      style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, overflowWrap: 'anywhere' }}
+    >
+      <span style={{ flexShrink: 0, display: 'inline-flex', opacity: 0.75 }}>{icon}</span>
+      <span style={{ minWidth: 0 }}>{children}</span>
+    </span>
+  );
+}
 
 function LabelBadge({ label }: { label: ReplyLabel | null }) {
   if (!label) return null;
@@ -290,6 +337,8 @@ function ConversationList({
   warmup,
   hasFilters,
   onClearFilters,
+  bulkSelected,
+  onToggleBulk,
 }: {
   selectedId?: string;
   mailboxId?: string;
@@ -300,6 +349,8 @@ function ConversationList({
   warmup: boolean;
   hasFilters: boolean;
   onClearFilters: () => void;
+  bulkSelected: Set<string>;
+  onToggleBulk: (id: string) => void;
 }) {
   // Opening a thread must keep the active view params (status/warmup/q…) in
   // the URL, or the list pane snaps back to the default open Inbox.
@@ -374,17 +425,34 @@ function ConversationList({
             item.participants.find((p) => p.role === 'from')?.email ||
             item.mailboxEmail;
           return (
+            <div key={item.id} role="listitem" style={{ position: 'relative' }}>
+              {/* Outside the Link: native checkbox behavior, no preventDefault
+                  fighting React's controlled state (the "doesn't tick until I
+                  open another email" bug). */}
+              <input
+                type="checkbox"
+                checked={bulkSelected.has(item.id)}
+                onChange={() => onToggleBulk(item.id)}
+                aria-label={`Select conversation from ${from}`}
+                style={{
+                  position: 'absolute',
+                  left: 14,
+                  top: 15,
+                  zIndex: 2,
+                  accentColor: 'var(--primary)',
+                  cursor: 'pointer',
+                }}
+              />
             <Link
-              key={item.id}
-              role="listitem"
               to={`/inbox/${item.id}${viewSearch ? `?${viewSearch}` : ''}`}
               className={clsx('conversation-row', {
                 selected: item.id === selectedId,
                 unread: item.unread,
               })}
+              style={{ paddingLeft: 38 }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                <strong style={{ fontWeight: item.unread ? 700 : 600, fontSize: 13.5 }}>
+                <strong style={{ fontWeight: item.unread ? 700 : 600, fontSize: 13.5, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {from}
                 </strong>
                 <span className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
@@ -433,6 +501,20 @@ function ConversationList({
                 </div>
               )}
               <div style={{ display: 'flex', gap: 5, marginTop: 7, flexWrap: 'wrap' }}>
+                {item.sfMatched === true && (
+                  <span className="badge badge-ok" title="Prospect found in Salesforce">
+                    Salesforce
+                  </span>
+                )}
+                {item.sfMatched === false && (
+                  <span
+                    className="badge"
+                    style={{ opacity: 0.6 }}
+                    title="Prospect not found in Salesforce"
+                  >
+                    Not in Salesforce
+                  </span>
+                )}
                 {item.slaBreachedAt && <span className="badge badge-danger">SLA breach</span>}
                 <LabelBadge label={item.label} />
                 {item.replyStatus === 'awaiting_reply' && !item.label && (
@@ -459,6 +541,7 @@ function ConversationList({
                 <span className="badge" style={{ opacity: 0.7 }}>{item.mailboxEmail}</span>
               </div>
             </Link>
+            </div>
           );
         })}
         {list.hasNextPage && (
@@ -495,7 +578,13 @@ function ConversationList({
   );
 }
 
-function ThreadPane({ conversationId }: { conversationId?: string }) {
+function ThreadPane({
+  conversationId,
+  onArchived,
+}: {
+  conversationId?: string;
+  onArchived?: (info: { id: string; subject: string }) => void;
+}) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   // Keep the active view (status/warmup/search…) when returning to the list —
@@ -523,6 +612,16 @@ function ThreadPane({ conversationId }: { conversationId?: string }) {
       return false;
     },
   });
+
+  // CRM context for the prospect — server-side org connection, no per-user
+  // setup. Long stale time: a thread's Salesforce match rarely changes.
+  const salesforce = useQuery({
+    queryKey: ['salesforce', conversationId],
+    queryFn: () => conversationApi.salesforce(conversationId!),
+    enabled: Boolean(conversationId),
+    staleTime: 5 * 60_000,
+  });
+  const sf = salesforce.data;
 
   useEffect(() => {
     if (detail.data?.draft?.bodyText) {
@@ -581,6 +680,7 @@ function ThreadPane({ conversationId }: { conversationId?: string }) {
         if (archive) {
           await conversationApi.setStatus(conversationId!, 'archived');
           await qc.invalidateQueries({ queryKey: ['conversations'] });
+          onArchived?.({ id: conversationId!, subject: data.subject });
           navigate(listPath);
           return;
         }
@@ -614,8 +714,9 @@ function ThreadPane({ conversationId }: { conversationId?: string }) {
 
   const archive = useMutation({
     mutationFn: async () => conversationApi.setStatus(conversationId!, 'archived'),
-    onSuccess: async () => {
+    onSuccess: async (data: ConversationDetail) => {
       await qc.invalidateQueries({ queryKey: ['conversations'] });
+      onArchived?.({ id: data.id, subject: data.subject });
       navigate(listPath);
     },
   });
@@ -637,6 +738,34 @@ function ThreadPane({ conversationId }: { conversationId?: string }) {
   const unsnooze = useMutation({
     mutationFn: async () => conversationApi.setStatus(conversationId!, 'open'),
     onSuccess: applyDetail,
+  });
+
+  // SXP-90: unarchive is the same open transition — reversible at any time,
+  // and the thread stays open in the pane while the list re-sorts.
+  const unarchive = useMutation({
+    mutationFn: async () => conversationApi.setStatus(conversationId!, 'open'),
+    onSuccess: async (data) => {
+      // Keep the thread open, then refresh the list the same way archive
+      // does so the Archived view drops this row without waiting for poll.
+      qc.setQueryData(['conversation', conversationId], data);
+      await qc.invalidateQueries({ queryKey: ['conversations'] });
+    },
+    onError: (err) => {
+      setError(err instanceof ApiClientError ? err.body.message : 'Failed to unarchive');
+    },
+  });
+
+  const [engineDraft, setEngineDraft] = useState<string | null>(null);
+  const editEngine = useMutation({
+    mutationFn: async (engine: string) => conversationApi.updateEngine(conversationId!, engine),
+    onSuccess: (data) => {
+      qc.setQueryData(['salesforce', conversationId], data);
+      setEngineDraft(null);
+      setError(null);
+    },
+    onError: (err) => {
+      setError(err instanceof ApiClientError ? err.body.message : 'Failed to update engine');
+    },
   });
 
   const classify = useMutation({
@@ -753,6 +882,15 @@ function ThreadPane({ conversationId }: { conversationId?: string }) {
             <h2 className="display-title" style={{ margin: '2px 0', fontSize: 17 }}>
               {c.participants.find((p) => p.role === 'from')?.name || c.participants.find((p) => p.role === 'from')?.email || c.subject}
             </h2>
+            {(() => {
+              const from = c.participants.find((p) => p.role === 'from');
+              // Only when the title shows a name — never repeat the email twice.
+              return from?.name && from.email ? (
+                <span className="muted" style={{ fontSize: 12.5, overflowWrap: 'anywhere' }}>
+                  {from.email}
+                </span>
+              ) : null;
+            })()}
             <LabelBadge label={c.label} />
             {c.slaBreachedAt && <span className="badge badge-danger">SLA breach</span>}
             {c.replyStatus === 'awaiting_reply' && !c.label && (
@@ -788,6 +926,15 @@ function ThreadPane({ conversationId }: { conversationId?: string }) {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, position: 'relative', flexShrink: 0, alignItems: 'center' }}>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ color: 'var(--primary)', fontWeight: 600 }}
+            onClick={() => navigate(`/meetings/assign?conversation=${conversationId}`)}
+          >
+            <CalendarClock size={16} />
+            Book meeting
+          </button>
           {c.status === 'snoozed' ? (
             <button
               type="button"
@@ -825,18 +972,33 @@ function ThreadPane({ conversationId }: { conversationId?: string }) {
               <MenuDateInput onPick={(d) => snooze.mutate(d)} />
             </div>
           </Menu>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => archive.mutate()}
-            aria-label="Archive conversation"
-          >
-            <Archive size={16} />
-            Archive
-          </button>
+          {c.status === 'archived' ? (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => unarchive.mutate()}
+              disabled={unarchive.isPending}
+              aria-label="Unarchive conversation"
+            >
+              <Archive size={16} />
+              Unarchive
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => archive.mutate()}
+              aria-label="Archive conversation"
+            >
+              <Archive size={16} />
+              Archive
+            </button>
+          )}
         </div>
       </header>
 
+      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
       <div style={{ padding: 20, overflow: 'auto', flex: 1, minHeight: 0, display: 'grid', gap: 12, alignContent: 'start' }}>
         {c.messages.map((message) => {
           const senderName = message.from.name || message.from.email;
@@ -1180,11 +1342,235 @@ function ThreadPane({ conversationId }: { conversationId?: string }) {
                   )}
                 </Menu>
               </div>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ color: 'var(--primary)', fontWeight: 600 }}
+                onClick={() => navigate(`/meetings/assign?conversation=${conversationId}`)}
+              >
+                Book meeting →
+              </button>
               </div>
             </div>
           </>
         )}
       </footer>
+      </div>
+      <aside
+        aria-label="Prospect details"
+        className="details-panel"
+        style={{
+          width: 276,
+          flexShrink: 0,
+          borderLeft: '1px solid var(--border-soft)',
+          overflowY: 'auto',
+          padding: '16px 18px',
+          alignContent: 'start',
+          fontSize: 12.5,
+          background: 'var(--card-solid)',
+        }}
+      >
+        <div style={{ display: 'grid', gap: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <PanelSectionTitle>Details</PanelSectionTitle>
+            {(sf?.match || sf?.account) && (
+              <a
+                href={(sf.match?.url ?? sf.account?.url)!}
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: 'var(--primary)', fontWeight: 600, fontSize: 12 }}
+              >
+                Open in Salesforce →
+              </a>
+            )}
+          </div>
+
+          {salesforce.isLoading && (
+            <p className="muted" style={{ margin: 0 }}>Looking up Salesforce…</p>
+          )}
+          {sf && !sf.ready && (
+            <p className="muted" style={{ margin: 0 }}>Salesforce is not configured.</p>
+          )}
+          {sf?.ready && !sf.match && !sf.account && !salesforce.isFetching && (
+            <p className="muted" style={{ margin: 0, lineHeight: 1.5 }}>
+              No Salesforce lead or contact matches this prospect.
+            </p>
+          )}
+          {sf?.ready && !sf.match && sf.account && (
+            <p className="muted" style={{ margin: 0, lineHeight: 1.5 }}>
+              No exact contact match — showing <strong>{sf.account.name}</strong>, matched by
+              the sender&apos;s email domain.
+            </p>
+          )}
+
+          {sf?.match && (
+            <div style={{ display: 'grid', gap: 6 }}>
+              <div style={{ lineHeight: 1.35 }}>
+                <strong style={{ fontSize: 13.5 }}>{sf.match.name}</strong>
+                {sf.match.company && (
+                  <span style={{ fontWeight: 500 }}> — {sf.match.company}</span>
+                )}
+              </div>
+              {sf.match.title && (
+                <span className="muted" style={{ marginTop: -3 }}>{sf.match.title}</span>
+              )}
+              <PanelContactLine icon={<Mail size={12} />}>{sf.match.email}</PanelContactLine>
+              {sf.match.phone && (
+                <PanelContactLine icon={<Phone size={12} />}>{sf.match.phone}</PanelContactLine>
+              )}
+              {(sf.match.city || sf.match.state) && (
+                <PanelContactLine icon={<MapPin size={12} />}>
+                  {[sf.match.city, sf.match.state].filter(Boolean).join(', ')}
+                </PanelContactLine>
+              )}
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 2 }}>
+                {sf.match.ownerName && (
+                  <span className="muted" style={{ fontSize: 12 }}>Owner: {sf.match.ownerName}</span>
+                )}
+                {sf.match.status && <span className="badge">{sf.match.status}</span>}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {(sf?.account || (sf?.match && sf.sequence)) && (
+          <div style={{ display: 'grid', gap: 9 }}>
+            <PanelSectionTitle>Company context</PanelSectionTitle>
+            <PanelRow label="Engine">
+              {engineDraft === null ? (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                  {sf.account?.engineManual || sf.account?.engine || '—'}
+                  {sf.account && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      style={{ minHeight: 20, paddingInline: 4, fontSize: 11 }}
+                      title="Correct an engine mismatch (writes Engine V2 Manual; audited)"
+                      onClick={() =>
+                        setEngineDraft(sf.account?.engineManual || sf.account?.engine || '')
+                      }
+                    >
+                      ✎
+                    </button>
+                  )}
+                </span>
+              ) : (
+                <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+                  <input
+                    className="input"
+                    autoFocus
+                    style={{ minHeight: 26, width: 110, padding: '2px 8px', fontSize: 12 }}
+                    value={engineDraft}
+                    onChange={(e) => setEngineDraft(e.target.value)}
+                    aria-label="Engine"
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    style={{ minHeight: 26, paddingInline: 8, fontSize: 11.5 }}
+                    disabled={!engineDraft.trim() || editEngine.isPending}
+                    onClick={() => editEngine.mutate(engineDraft.trim())}
+                  >
+                    {editEngine.isPending ? '…' : 'Save'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ minHeight: 26, paddingInline: 5, fontSize: 11.5 }}
+                    onClick={() => setEngineDraft(null)}
+                  >
+                    ✕
+                  </button>
+                </span>
+              )}
+            </PanelRow>
+            {(sf.account?.accountScoreGrade ||
+              (sf.account?.accountScore !== null && sf.account?.accountScore !== undefined)) && (
+              <PanelRow label="EDIE">
+                {sf.account?.accountScoreGrade ?? String(sf.account?.accountScore)}
+                {sf.account?.accountScoreGrade &&
+                  sf.account?.accountScore !== null &&
+                  sf.account?.accountScore !== undefined && (
+                    <span className="muted" style={{ fontWeight: 400 }}>
+                      {' '}· {sf.account.accountScore}
+                    </span>
+                  )}
+              </PanelRow>
+            )}
+            {sf.account?.industry && <PanelRow label="Industry">{sf.account.industry}</PanelRow>}
+            {sf.sequence?.name && <PanelRow label="Sequence">{sf.sequence.name}</PanelRow>}
+            {(sf.sequence?.currentStatus || sf.sequence?.status) && (
+              <PanelRow label="Status">
+                {sf.sequence.currentStatus || sf.sequence.status}
+              </PanelRow>
+            )}
+            {sf.sequence?.touchpoint !== null && sf.sequence?.touchpoint !== undefined && (
+              <PanelRow label="Touchpoint">{sf.sequence.touchpoint}</PanelRow>
+            )}
+            {sf.account?.description && (
+              <p
+                className="muted"
+                style={{
+                  margin: '2px 0 0',
+                  fontSize: 12,
+                  lineHeight: 1.55,
+                  overflow: 'hidden',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 4,
+                  WebkitBoxOrient: 'vertical',
+                }}
+                title={sf.account.description}
+              >
+                {sf.account.description}
+              </p>
+            )}
+          </div>
+        )}
+
+        {sf && sf.opportunities.length > 0 && (
+          <div style={{ display: 'grid', gap: 6 }}>
+            <PanelSectionTitle>Open opportunities</PanelSectionTitle>
+            {sf.opportunities.map((opp) => (
+              <a
+                key={opp.id}
+                href={opp.url}
+                target="_blank"
+                rel="noreferrer"
+                style={{ display: 'grid', gap: 1 }}
+                title={opp.closeDate ? `Closes ${opp.closeDate}` : undefined}
+              >
+                <span style={{ fontWeight: 600 }}>{opp.name}</span>
+                <span className="muted" style={{ fontSize: 11.5 }}>
+                  {[opp.stageName, typeof opp.amount === 'number' ? `$${Math.round(opp.amount).toLocaleString()}` : null]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </span>
+              </a>
+            ))}
+          </div>
+        )}
+
+        {(sf?.related.length ?? 0) > 0 && (
+          <div style={{ display: 'grid', gap: 6 }}>
+            <PanelSectionTitle>Conversations</PanelSectionTitle>
+            {sf!.related.map((r) => (
+              <Link
+                key={r.id}
+                to={`/inbox/${r.id}${listSearch ? `?${listSearch}` : ''}`}
+                style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}
+              >
+                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {r.subject}
+                </span>
+                <span className="muted" style={{ flexShrink: 0, fontSize: 11.5 }}>
+                  {timeAgo(r.lastMessageAt)}
+                </span>
+              </Link>
+            ))}
+          </div>
+        )}
+      </aside>
+      </div>
     </section>
   );
 }
@@ -1226,6 +1612,61 @@ export function InboxPage() {
   const warmupKeywordsActive = (bootstrap?.workspace.warmupKeywords?.length ?? 0) > 0;
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [navMenuOpen, setNavMenuOpen] = useState(false);
+  const qc = useQueryClient();
+
+  // On the Archived view the bulk action un-archives; everywhere else it
+  // archives. The verb, target status, and undo direction all follow suit.
+  const isArchivedView = status === 'archived';
+
+  // One-click undo after a bulk move — no trip back to the other view needed.
+  const [undoArchive, setUndoArchive] = useState<{
+    ids: string[];
+    label: string;
+    verb: string;
+    undoTo: 'open' | 'archived';
+  } | null>(null);
+  useEffect(() => {
+    if (!undoArchive) return;
+    const timer = setTimeout(() => setUndoArchive(null), 8000);
+    return () => clearTimeout(timer);
+  }, [undoArchive]);
+  const undoArchiveMutation = useMutation({
+    mutationFn: async (u: { ids: string[]; undoTo: 'open' | 'archived' }) =>
+      conversationApi.bulkStatus(u.ids, u.undoTo),
+    onSuccess: async () => {
+      setUndoArchive(null);
+      await qc.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
+
+  // Multi-select archive / unarchive from the list.
+  const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
+  const toggleBulk = (id: string) => {
+    setBulkSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  useEffect(() => {
+    // Leaving the current view clears the selection — ids may not be visible.
+    setBulkSelected(new Set());
+  }, [status, warmupView]);
+  const bulkArchive = useMutation({
+    mutationFn: async (ids: string[]) =>
+      conversationApi.bulkStatus(ids, isArchivedView ? 'open' : 'archived'),
+    onSuccess: async (_data, ids) => {
+      setBulkSelected(new Set());
+      setUndoArchive({
+        ids,
+        label: `${ids.length} conversation${ids.length === 1 ? '' : 's'}`,
+        verb: isArchivedView ? 'Unarchived' : 'Archived',
+        undoTo: isArchivedView ? 'archived' : 'open',
+      });
+      await qc.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
   const navigate = useNavigate();
   const [q, setQ] = useState(params.get('q') ?? '');
   // A non-default status (Snoozed/Archived) counts as an active filter — the
@@ -1268,7 +1709,6 @@ export function InboxPage() {
     },
   });
 
-  const primaryMailbox = mailboxes.data?.items[0] ?? null;
   const unreadTotal = (mailboxes.data?.items ?? []).reduce((sum, m) => sum + m.unreadCount, 0);
   const setView = (patch: { status?: string; unread?: boolean; warmup?: boolean }) => {
     const next = new URLSearchParams(params);
@@ -1289,10 +1729,6 @@ export function InboxPage() {
     }
     setParams(next);
   };
-  const brokenCount =
-    mailboxes.data?.items.filter((m) => m.health === 'error' || m.health === 'auth_required')
-      .length ?? 0;
-
   return (
     <div className="app-frame">
       <header className="top-bar">
@@ -1396,41 +1832,15 @@ export function InboxPage() {
             onChange={(e) => setQ(e.target.value)}
           />
         </label>
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
-          <Link
-            to="/settings/mailboxes"
-            className="btn btn-ghost"
-            style={{ minHeight: 34, fontSize: 13 }}
-            title={primaryMailbox?.lastError ?? undefined}
-          >
-            <span
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: '50%',
-                background:
-                  brokenCount > 0
-                    ? 'var(--danger)'
-                    : primaryMailbox
-                      ? 'var(--primary)'
-                      : 'var(--muted-foreground)',
-              }}
-              aria-hidden
-            />
-            {primaryMailbox
-              ? `${primaryMailbox.provider === 'google' ? 'Google' : 'Microsoft'} · ${primaryMailbox.email}${
-                  (mailboxes.data?.items.length ?? 0) > 1
-                    ? ` +${(mailboxes.data?.items.length ?? 1) - 1}`
-                    : ''
-                }${brokenCount ? ` · ${brokenCount} sync issue${brokenCount > 1 ? 's' : ''}` : ''}`
-              : 'No mailbox connected'}
-          </Link>
-        </div>
+        {/* Empty right slot keeps the search field centered. Mailbox status
+            lives on the Mailboxes page; sync problems surface via the banner. */}
+        <div style={{ flex: 1 }} aria-hidden />
       </header>
       <div
         className={clsx('app-shell', { 'thread-open': Boolean(conversationId) })}
-        style={{ gridTemplateColumns: 'minmax(300px, 380px) 1fr' }}
+        style={{ gridTemplateColumns: '190px minmax(300px, 380px) 1fr' }}
       >
+        <Sidebar />
         <div style={{ display: 'contents' }}>
           <div style={{ display: 'flex', flexDirection: 'column' }} className="list-pane-wrap">
             <div
@@ -1589,11 +1999,109 @@ export function InboxPage() {
               warmup={warmupView}
               hasFilters={hasActiveFilters}
               onClearFilters={clearFilters}
+              bulkSelected={bulkSelected}
+              onToggleBulk={toggleBulk}
             />
           </div>
-          <ThreadPane conversationId={conversationId} />
+          <ThreadPane
+            conversationId={conversationId}
+            onArchived={(info) =>
+              setUndoArchive({
+                ids: [info.id],
+                label: `“${info.subject}”`,
+                verb: 'Archived',
+                undoTo: 'open',
+              })
+            }
+          />
         </div>
       </div>
+      {bulkSelected.size > 0 && !undoArchive && (
+        <div
+          role="status"
+          className="card"
+          style={{
+            position: 'fixed',
+            bottom: 18,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 30,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: '9px 14px',
+            background: 'var(--foreground)',
+            color: 'var(--primary-foreground)',
+            border: 'none',
+            fontSize: 13,
+          }}
+        >
+          <span style={{ fontWeight: 600 }}>
+            {bulkSelected.size} selected
+          </span>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ minHeight: 26, paddingInline: 8, color: 'inherit', fontWeight: 700, flexShrink: 0 }}
+            disabled={bulkArchive.isPending}
+            onClick={() => bulkArchive.mutate([...bulkSelected])}
+          >
+            {isArchivedView ? <ArchiveRestore size={14} /> : <Archive size={14} />}
+            {bulkArchive.isPending
+              ? isArchivedView
+                ? 'Unarchiving…'
+                : 'Archiving…'
+              : isArchivedView
+                ? 'Unarchive'
+                : 'Archive'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ minHeight: 26, paddingInline: 8, color: 'inherit', opacity: 0.8, flexShrink: 0 }}
+            onClick={() => setBulkSelected(new Set())}
+          >
+            Clear
+          </button>
+        </div>
+      )}
+      {undoArchive && (
+        <div
+          role="status"
+          className="card"
+          style={{
+            position: 'fixed',
+            bottom: 18,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 30,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: '9px 14px',
+            background: 'var(--foreground)',
+            color: 'var(--primary-foreground)',
+            border: 'none',
+            fontSize: 13,
+            maxWidth: 420,
+          }}
+        >
+          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {undoArchive.verb} {undoArchive.label}
+          </span>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ minHeight: 26, paddingInline: 8, color: 'inherit', fontWeight: 700, flexShrink: 0 }}
+            disabled={undoArchiveMutation.isPending}
+            onClick={() =>
+              undoArchiveMutation.mutate({ ids: undoArchive.ids, undoTo: undoArchive.undoTo })
+            }
+          >
+            {undoArchiveMutation.isPending ? 'Undoing…' : 'Undo'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import type {
   BootstrapResponse,
   ConversationDetail,
   ConversationListResponse,
+  ConversationSalesforceResponse,
   LoginResponse,
   MailboxProvider,
   ReplyDraft,
@@ -86,6 +87,11 @@ export const conversationApi = {
       method: 'POST',
       body: JSON.stringify({ unread }),
     }),
+  bulkStatus: (ids: string[], status: 'archived' | 'open') =>
+    apiFetch<{ updated: number }>('/conversations/bulk/status', {
+      method: 'PATCH',
+      body: JSON.stringify({ ids, status }),
+    }),
   setStatus: (id: string, status: string, snoozedUntil?: string) =>
     apiFetch<ConversationDetail>(`/conversations/${id}/status`, {
       method: 'PATCH',
@@ -136,4 +142,82 @@ export const conversationApi = {
     apiFetch<ConversationDetail>(`/conversations/${id}/request-approval`, { method: 'POST' }),
   overrideApproval: (id: string) =>
     apiFetch<ConversationDetail>(`/conversations/${id}/approval-override`, { method: 'POST' }),
+  salesforce: (id: string) =>
+    apiFetch<ConversationSalesforceResponse>(`/conversations/${id}/salesforce`),
+  updateEngine: (id: string, engine: string) =>
+    apiFetch<ConversationSalesforceResponse>(`/conversations/${id}/salesforce/engine`, {
+      method: 'PATCH',
+      body: JSON.stringify({ engine }),
+    }),
+};
+
+export interface DeskAssignee {
+  id: string;
+  name: string;
+  email: string;
+  tag: string;
+  weeklyMeetingLimit: number;
+  meetingsThisWeek: number | null;
+  calendarError: string | null;
+}
+
+export interface AssigneeCalendarEvent {
+  id: string;
+  summary: string;
+  start: string;
+  end: string;
+  isAllDay: boolean;
+  busy: boolean;
+}
+
+export interface BookMeetingResult {
+  event: { eventId: string; htmlLink: string; meetLink: string | null; start: string; end: string };
+  opportunity:
+    | { status: 'created'; id: string; name: string }
+    | { status: 'skipped'; reason: string; opportunityId?: string; claimedBy?: string }
+    | { status: 'error'; message: string };
+  assignee: { id: string; name: string; email: string };
+  prospectEmail: string;
+}
+
+export const meetingApi = {
+  book: (input: {
+    conversationId: string;
+    assigneeId: string;
+    title: string;
+    date: string;
+    startMinutes: number;
+    durationMinutes: number;
+    timeZone: string;
+  }) =>
+    apiFetch<BookMeetingResult>('/meetings/book', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  assigneeCalendar: (assigneeId: string, week: number) =>
+    apiFetch<{
+      weekLabel: string;
+      weekStart: string;
+      assignee: { id: string; name: string; email: string };
+      events: AssigneeCalendarEvent[];
+    }>(`/meetings/calendar/${assigneeId}?week=${week}`),
+  desk: (week: number) =>
+    apiFetch<{ ready: boolean; weekLabel: string; weekStart: string | null; assignees: DeskAssignee[] }>(
+      `/meetings/desk?week=${week}`,
+    ),
+  updateLimit: (assigneeId: string, weeklyMeetingLimit: number) =>
+    apiFetch<{ ok: boolean }>(`/meetings/assignees/${assigneeId}/limit`, {
+      method: 'PATCH',
+      body: JSON.stringify({ weeklyMeetingLimit }),
+    }),
+};
+
+export const salesforceApi = {
+  status: () =>
+    apiFetch<{
+      configured: boolean;
+      connected: boolean;
+      instanceUrl: string | null;
+      username: string | null;
+    }>('/salesforce/status'),
 };

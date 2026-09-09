@@ -65,7 +65,7 @@ export function TeamSettingsPage() {
   });
 
   return (
-    <div className="app-shell" style={{ gridTemplateColumns: '56px 1fr' }}>
+    <div className="app-shell" style={{ gridTemplateColumns: '190px 1fr' }}>
       <Sidebar />
       <main style={{ padding: 28, maxWidth: 720 }}>
         <h1 className="display-title" style={{ marginTop: 0, fontSize: 30 }}>

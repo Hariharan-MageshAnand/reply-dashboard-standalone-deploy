@@ -147,21 +147,62 @@ button:disabled {
   padding: 20px 14px;
 }
 
-.icon-rail {
+/* Labeled app sidebar: "Reply Dashboard" is one tab of the hub. */
+.side-nav {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 18px;
-  padding: 14px 0 16px;
+  gap: 14px;
+  padding: 14px 10px 14px;
 }
 
-.rail-logo {
-  width: 26px;
-  height: 26px;
+.side-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 10px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.side-brand-dot {
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
+  flex-shrink: 0;
   background: radial-gradient(circle at 35% 30%, #86ab4d, #3f5c28);
 }
 
+.side-brand-name {
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.side-tab {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 13px;
+  text-align: left;
+}
+
+.side-tab:hover {
+  background: rgba(22, 58, 36, 0.07);
+}
+
+.side-tab-active {
+  background: rgba(22, 58, 36, 0.12);
+  font-weight: 600;
+}
+
+/* Nav buttons that used the old icon rail (top bar). */
 .rail-btn {
   display: grid;
   place-items: center;
@@ -218,6 +259,17 @@ button:disabled {
 .app-frame .list-pane-wrap,
 .app-frame .thread-pane {
   height: 100%;
+}
+
+/* Prospect details panel (right sidebar of the thread pane). */
+.details-panel {
+  display: grid;
+}
+
+.details-panel > * + * {
+  border-top: 1px solid var(--border-soft);
+  padding-top: 14px;
+  margin-top: 14px;
 }
 
 /* Chat-style message rows */

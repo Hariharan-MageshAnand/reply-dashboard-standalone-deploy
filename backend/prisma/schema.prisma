@@ -213,6 +213,12 @@ model Conversation {
   currentLabel       ReplyLabel?
   labelPriority      Int                @default(3)
   isWarmup           Boolean            @default(false)
+  // Cached Salesforce presence of the prospect (list tag + sort). Null
+  // sfCheckedAt = not yet checked; the worker sweeps those in the background.
+  // sfMatchType: 'contact' | 'lead' (person found) or 'domain' (company only).
+  sfMatched          Boolean            @default(false)
+  sfMatchType        String?
+  sfCheckedAt        DateTime?
   slaBreachedAt      DateTime?
   lastMessageAt      DateTime           @default(now())
   messageCount       Int                @default(0)
@@ -470,6 +476,23 @@ model ScheduledSend {
   @@index([conversationId, status])
   @@index([status, scheduledFor])
   @@map("scheduled_sends")
+}
+
+// Meeting assignment desk (Book meeting): team roster with weekly limits.
+// Calendar counts come live from Google via the service account.
+model MeetingAssignee {
+  id                 String   @id @default(cuid())
+  workspaceId        String
+  name               String
+  email              String
+  // 'recommended' | 'alternative' | 'not_recommended'
+  tag                String   @default("alternative")
+  weeklyMeetingLimit Int      @default(50)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([workspaceId, email])
+  @@map("meeting_assignees")
 }
 
 model AuditLog {

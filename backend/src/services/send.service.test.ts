@@ -596,6 +596,69 @@ describe('reply send state machine + snooze (mock mode)', () => {
     expect(res.body.draft?.bodyText).toBe('hold this');
   });
 
+  it('bulk archive and bulk unarchive move several conversations at once', async () => {
+    const a = await setup('bulk1@emsoft.com');
+    const b = await setup('bulk2@emsoft.com');
+    // Same workspace mode is personal in tests, so use one auth's workspace:
+    // create a second conversation inside A's workspace instead.
+    const threadId = `bulk-extra-${Date.now()}`;
+    const extra = await prisma.conversation.create({
+      data: {
+        workspaceId: a.workspaceId,
+        mailboxId: a.mailboxId,
+        gmailThreadId: threadId,
+        subject: 'Re: second',
+        snippet: 'second',
+        lastMessageAt: new Date(),
+        messageCount: 1,
+      },
+    });
+
+    const archived = await request(app)
+      .patch('/api/conversations/bulk/status')
+      .set('Authorization', a.auth)
+      .send({ ids: [a.conversationId, extra.id, b.conversationId], status: 'archived' });
+    expect(archived.status).toBe(200);
+    // B's conversation belongs to another workspace — never touched.
+    expect(archived.body.updated).toBe(2);
+    expect(
+      (await prisma.conversation.findUniqueOrThrow({ where: { id: b.conversationId } })).status,
+    ).toBe('open');
+
+    const restored = await request(app)
+      .patch('/api/conversations/bulk/status')
+      .set('Authorization', a.auth)
+      .send({ ids: [a.conversationId, extra.id], status: 'open' });
+    expect(restored.body.updated).toBe(2);
+    expect(
+      (await prisma.conversation.findUniqueOrThrow({ where: { id: a.conversationId } })).status,
+    ).toBe('open');
+  });
+
+  it('unarchive returns an archived conversation to the open view (SXP-90)', async () => {
+    const { auth, conversationId } = await setup('unarchive1@emsoft.com');
+
+    const archived = await request(app)
+      .patch(`/api/conversations/${conversationId}/status`)
+      .set('Authorization', auth)
+      .send({ status: 'archived' });
+    expect(archived.status).toBe(200);
+    expect(archived.body.status).toBe('archived');
+
+    // Reversible at any time: the open transition brings it straight back.
+    const unarchived = await request(app)
+      .patch(`/api/conversations/${conversationId}/status`)
+      .set('Authorization', auth)
+      .send({ status: 'open' });
+    expect(unarchived.status).toBe(200);
+    expect(unarchived.body.status).toBe('open');
+
+    const open = await request(app)
+      .get('/api/conversations?status=open')
+      .set('Authorization', auth);
+    expect(open.body.items.map((i: { id: string }) => i.id)).toContain(conversationId);
+  });
+
   it('snoozes with a future date, rejects past/missing dates, and resurfaces when due', async () => {
     const { auth, conversationId } = await setup('sender4@emsoft.com');
 

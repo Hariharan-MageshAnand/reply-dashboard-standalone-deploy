@@ -13,6 +13,7 @@ export const MAINTENANCE_JOBS = {
   processScheduledSends: 'process-scheduled-sends',
   slaCheck: 'sla-check',
   approvalReminders: 'approval-reminders',
+  salesforceSweep: 'salesforce-sweep',
 } as const;
 
 // PRD 5.1: a new reply appears in the inbox within 5 minutes of arrival.
@@ -91,6 +92,11 @@ export async function registerMaintenanceSchedulers() {
     MAINTENANCE_JOBS.approvalReminders,
     { every: RESURFACE_INTERVAL_MS },
     { name: MAINTENANCE_JOBS.approvalReminders },
+  );
+  await maintenanceQueue.upsertJobScheduler(
+    MAINTENANCE_JOBS.salesforceSweep,
+    { every: RESURFACE_INTERVAL_MS },
+    { name: MAINTENANCE_JOBS.salesforceSweep },
   );
 }
 

@@ -1,45 +1,48 @@
 import { NavLink } from 'react-router-dom';
-import { Inbox, Mail, Settings, LogOut } from 'lucide-react';
+import { LogOut, Mail, MessageSquare, Settings } from 'lucide-react';
 import { useSession } from '../lib/session';
 import clsx from 'clsx';
 
-/** Icon rail (demo layout): 56px, icons only, tooltips via title. */
-export function Sidebar({ collapsed: _collapsed = false }: { collapsed?: boolean }) {
+/**
+ * Labeled app sidebar. "Reply Dashboard" is one tab — the app is becoming a
+ * hub (Salesforce next), so sections get named tabs instead of a bare icon
+ * rail.
+ */
+export function Sidebar() {
   const { bootstrap, signOut } = useSession();
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
-    clsx('rail-btn', { 'rail-active': isActive });
+    clsx('side-tab', { 'side-tab-active': isActive });
 
   return (
-    <aside className="sidebar-pane icon-rail" aria-label="Workspace navigation">
-      <div
-        className="rail-logo"
-        title={bootstrap?.workspace.name ?? 'Reply'}
-        aria-label={bootstrap?.workspace.name ?? 'Reply'}
-      />
-      <nav style={{ display: 'grid', gap: 6, justifyItems: 'center' }}>
-        <NavLink to="/inbox" className={linkClass} title="Inbox">
-          <Inbox size={19} aria-hidden />
-          <span className="sr-only">Inbox</span>
+    <aside className="sidebar-pane side-nav" aria-label="Workspace navigation">
+      <div className="side-brand" title={bootstrap?.workspace.name ?? 'Emergence'}>
+        <span className="side-brand-dot" aria-hidden />
+        <span className="side-brand-name">{bootstrap?.workspace.name ?? 'Emergence'}</span>
+      </div>
+      <nav style={{ display: 'grid', gap: 2 }}>
+        <NavLink to="/inbox" className={linkClass}>
+          <MessageSquare size={16} aria-hidden />
+          Reply Dashboard
         </NavLink>
-        <NavLink to="/settings/mailboxes" className={linkClass} title="Mailboxes">
-          <Mail size={19} aria-hidden />
-          <span className="sr-only">Mailboxes</span>
+        <NavLink to="/settings/mailboxes" className={linkClass}>
+          <Mail size={16} aria-hidden />
+          Mailboxes
         </NavLink>
-        <NavLink to="/settings/team" className={linkClass} title="Settings">
-          <Settings size={19} aria-hidden />
-          <span className="sr-only">Settings</span>
+        <NavLink to="/settings/team" className={linkClass}>
+          <Settings size={16} aria-hidden />
+          Settings
         </NavLink>
       </nav>
-      <div style={{ marginTop: 'auto', display: 'grid', justifyItems: 'center', gap: 4 }}>
+      <div style={{ marginTop: 'auto', display: 'grid', gap: 4 }}>
         <button
           type="button"
-          className="rail-btn"
-          title={`Sign out (${bootstrap?.user.email ?? ''})`}
+          className="side-tab"
+          title={bootstrap?.user.email ?? ''}
           onClick={() => void signOut()}
         >
-          <LogOut size={17} aria-hidden />
-          <span className="sr-only">Sign out</span>
+          <LogOut size={15} aria-hidden />
+          Sign out
         </button>
       </div>
     </aside>

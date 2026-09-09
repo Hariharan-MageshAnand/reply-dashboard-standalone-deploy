@@ -152,6 +152,10 @@ export interface ConversationListItem {
   redirectName: string | null;
   /** True when the thread matched the workspace's warm-up noise keywords. */
   isWarmup: boolean;
+  /** Prospect exists in Salesforce (contact/lead/domain). Null = not yet checked. */
+  sfMatched: boolean | null;
+  /** 'contact'/'lead' = the person; 'domain' = company only. Null = no match or unchecked. */
+  sfMatchType: 'contact' | 'lead' | 'domain' | null;
   /** Set while the reply has waited unresponded past the SLA threshold; clears on response. */
   slaBreachedAt: string | null;
   labels: string[];
@@ -251,6 +255,87 @@ export interface ConversationDetail extends ConversationListItem {
   latestAiDraft: AiDraftView | null;
   /** Latest approval request — pending blocks Send; resolved shown for context. */
   approval: ApprovalView | null;
+}
+
+/** Salesforce Lead/Contact matched to a conversation's prospect email. */
+export interface SalesforceMatchView {
+  recordType: 'contact' | 'lead';
+  id: string;
+  name: string;
+  title: string | null;
+  company: string | null;
+  ownerName: string | null;
+  /** Lead status when recordType is 'lead'; null for contacts. */
+  status: string | null;
+  email: string;
+  phone: string | null;
+  city: string | null;
+  state: string | null;
+  /** Deep link into Salesforce for this record. */
+  url: string;
+  /** Account link — contacts only. */
+  accountId: string | null;
+}
+
+/** Contact-level sequencing context (Sequence_Name/Status/Current_Status). */
+export interface SalesforceSequenceView {
+  name: string | null;
+  status: string | null;
+  currentStatus: string | null;
+  /** Touchpoint number within the current sequence. */
+  touchpoint: number | null;
+}
+
+/** Another conversation with the same prospect (details panel). */
+export interface RelatedConversationView {
+  id: string;
+  subject: string;
+  lastMessageAt: string;
+}
+
+export interface SalesforceAccountView {
+  id: string;
+  name: string;
+  /** Engine_V2__c (formula — the display value). */
+  engine: string | null;
+  /** Engine_V2_Manual__c — writable operator override. */
+  engineManual: string | null;
+  /** Account_Score_V2__c ("EDIE score" equivalent per Hari). */
+  accountScore: number | null;
+  accountScoreGrade: string | null;
+  industry: string | null;
+  description: string | null;
+  url: string;
+}
+
+export interface SalesforceOpportunityView {
+  id: string;
+  name: string;
+  stageName: string | null;
+  amount: number | null;
+  closeDate: string | null;
+  url: string;
+}
+
+export interface ConversationSalesforceResponse {
+  /** False when the backend has no Salesforce credentials configured. */
+  ready: boolean;
+  match: SalesforceMatchView | null;
+  sequence: SalesforceSequenceView | null;
+  account: SalesforceAccountView | null;
+  opportunities: SalesforceOpportunityView[];
+  /**
+   * 'email' = exact person match; 'domain' = no person matched, company
+   * resolved via the email domain (CRM emails often differ from reply
+   * aliases); null = nothing found.
+   */
+  matchedBy: 'email' | 'domain' | null;
+  /** Other conversations with the same prospect, newest first. */
+  related: RelatedConversationView[];
+}
+
+export interface UpdateEngineRequest {
+  engine: string;
 }
 
 export interface ReplyDraft {

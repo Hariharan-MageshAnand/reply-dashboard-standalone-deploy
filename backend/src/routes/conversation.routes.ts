@@ -24,6 +24,11 @@ import {
 } from '../services/ai.service.js';
 import { overrideApproval, requestApproval } from '../services/approval.service.js';
 import { prisma } from '../lib/prisma.js';
+import { env } from '../config/env.js';
+import {
+  getSalesforceContext,
+  updateAccountEngine,
+} from '../services/salesforce.service.js';
 import { writeAudit } from '../services/auth.service.js';
 import { requireAuth } from '../types/auth.js';
 
@@ -92,6 +97,36 @@ conversationRouter.post(
       body.unread,
     );
     res.json(detail);
+  }),
+);
+
+/**
+ * Bulk archive/unarchive. Registered before /:conversationId/status so
+ * 'bulk' is never captured as a conversation id. Snoozes are cleared on
+ * either transition; snoozing itself stays per-conversation (needs a date).
+ */
+conversationRouter.patch(
+  '/bulk/status',
+  asyncHandler(async (req, res) => {
+    const auth = requireAuth(req);
+    const body = z
+      .object({
+        ids: z.array(z.string().min(1)).min(1).max(100),
+        status: z.enum(['archived', 'open']),
+      })
+      .parse(req.body);
+    const updated = await prisma.conversation.updateMany({
+      where: { id: { in: body.ids }, workspaceId: auth.workspaceId },
+      data: { status: body.status, snoozedUntil: null },
+    });
+    await writeAudit({
+      workspaceId: auth.workspaceId,
+      actorId: auth.userId,
+      action: 'conversation.bulk_status',
+      entityType: 'conversation',
+      metadata: { status: body.status, count: updated.count, ids: body.ids },
+    });
+    res.json({ updated: updated.count });
   }),
 );
 
@@ -285,6 +320,141 @@ conversationRouter.post(
     await classifyInboundMessage(latestInbound.id);
     const detail = await getConversation(auth.workspaceId, conversationId);
     res.json(detail);
+  }),
+);
+
+const EMPTY_SF_CONTEXT = {
+  match: null,
+  sequence: null,
+  account: null,
+  opportunities: [],
+  matchedBy: null,
+  related: [],
+};
+
+/** Other conversations with the same prospect (details panel CONVERSATIONS). */
+async function relatedConversations(
+  workspaceId: string,
+  conversationId: string,
+  prospectEmail: string,
+) {
+  const rows = await prisma.conversation.findMany({
+    where: {
+      workspaceId,
+      id: { not: conversationId },
+      isWarmup: false,
+      messages: { some: { direction: 'inbound', fromEmail: prospectEmail.toLowerCase() } },
+    },
+    orderBy: { lastMessageAt: 'desc' },
+    take: 5,
+    select: { id: true, subject: true, lastMessageAt: true },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    subject: r.subject,
+    lastMessageAt: r.lastMessageAt.toISOString(),
+  }));
+}
+
+conversationRouter.get(
+  '/:conversationId/salesforce',
+  asyncHandler(async (req, res) => {
+    const auth = requireAuth(req);
+    const conversationId = param(req, 'conversationId');
+    // The prospect is whoever sent the newest inbound reply.
+    const latestInbound = await prisma.message.findFirst({
+      where: { conversationId, direction: 'inbound', conversation: { workspaceId: auth.workspaceId } },
+      orderBy: [{ sentAt: 'desc' }, { id: 'desc' }],
+      select: { fromEmail: true },
+    });
+    if (!latestInbound) {
+      res.json({ ready: env.SF_READY, ...EMPTY_SF_CONTEXT });
+      return;
+    }
+    const related = await relatedConversations(
+      auth.workspaceId,
+      conversationId,
+      latestInbound.fromEmail,
+    );
+    if (!env.SF_READY) {
+      res.json({ ready: false, ...EMPTY_SF_CONTEXT, related });
+      return;
+    }
+    const context = await getSalesforceContext(latestInbound.fromEmail);
+    // Keep the cached list tag/sort in step with what the panel just learned.
+    const matchType = context.person?.recordType ?? (context.account ? 'domain' : null);
+    await prisma.conversation.updateMany({
+      where: { id: conversationId, workspaceId: auth.workspaceId },
+      data: {
+        sfMatched: matchType === 'contact' || matchType === 'lead',
+        sfMatchType: matchType,
+        sfCheckedAt: new Date(),
+      },
+    });
+    res.json({
+      ready: true,
+      match: context.person,
+      sequence: context.sequence,
+      account: context.account,
+      opportunities: context.opportunities,
+      matchedBy: context.matchedBy,
+      related,
+    });
+  }),
+);
+
+conversationRouter.patch(
+  '/:conversationId/salesforce/engine',
+  asyncHandler(async (req, res) => {
+    const auth = requireAuth(req);
+    const conversationId = param(req, 'conversationId');
+    const body = z.object({ engine: z.string().min(1).max(120) }).parse(req.body);
+    if (!env.SF_READY) {
+      throw new AppError('validation_error', 'Salesforce is not configured.', 400);
+    }
+    const latestInbound = await prisma.message.findFirst({
+      where: { conversationId, direction: 'inbound', conversation: { workspaceId: auth.workspaceId } },
+      orderBy: [{ sentAt: 'desc' }, { id: 'desc' }],
+      select: { fromEmail: true },
+    });
+    if (!latestInbound) {
+      throw new AppError('not_found', 'No inbound reply on this conversation.', 404);
+    }
+    const context = await getSalesforceContext(latestInbound.fromEmail);
+    if (!context.account) {
+      throw new AppError('not_found', 'No Salesforce account is linked to this prospect.', 404);
+    }
+    const previous = { engine: context.account.engine, engineManual: context.account.engineManual };
+    const account = await updateAccountEngine(context.account.id, body.engine);
+    // SXP-90: every engine correction is audited — who, which account,
+    // old and new values.
+    await writeAudit({
+      workspaceId: auth.workspaceId,
+      actorId: auth.userId,
+      action: 'salesforce.engine_edit',
+      entityType: 'conversation',
+      entityId: conversationId,
+      metadata: {
+        accountId: context.account.id,
+        accountName: context.account.name,
+        previousEngine: previous.engine,
+        previousEngineManual: previous.engineManual,
+        newEngineManual: body.engine,
+      },
+    });
+    res.json({
+      ready: true,
+      match: context.person,
+      sequence: context.sequence,
+      account,
+      opportunities: context.opportunities,
+      matchedBy: context.matchedBy,
+      related: await relatedConversations(
+        auth.workspaceId,
+        conversationId,
+        latestInbound.fromEmail,
+      ),
+    });
   }),
 );
 

@@ -38,6 +38,9 @@ function mapListItem(row: {
   snoozedUntil: Date | null;
   currentLabel: ReplyLabel | null;
   isWarmup: boolean;
+  sfMatched: boolean;
+  sfMatchType: string | null;
+  sfCheckedAt: Date | null;
   slaBreachedAt: Date | null;
   lastMessageAt: Date;
   messageCount: number;
@@ -74,6 +77,10 @@ function mapListItem(row: {
     label: row.currentLabel,
     redirectName: meta?.redirect_contact_name ?? null,
     isWarmup: row.isWarmup,
+    sfMatched: row.sfCheckedAt ? row.sfMatched : null,
+    sfMatchType: row.sfCheckedAt
+      ? ((row.sfMatchType as ConversationListItem['sfMatchType']) ?? null)
+      : null,
     slaBreachedAt: row.slaBreachedAt?.toISOString() ?? null,
     labels: row.labels.map((l) => l.label.name),
     assigneeId: row.assignment?.assigneeId ?? null,
@@ -181,9 +188,14 @@ export async function listConversations(
           take: 1,
         },
       },
-      // PRD 5.1 ordering: Interested → More Info → Needs Review → the rest,
-      // newest first within each group.
-      orderBy: [{ labelPriority: 'asc' }, { lastMessageAt: 'desc' }, { id: 'desc' }],
+      // Salesforce-matched prospects first, then PRD 5.1 ordering:
+      // Interested → More Info → Needs Review → the rest, newest first.
+      orderBy: [
+        { sfMatched: 'desc' },
+        { labelPriority: 'asc' },
+        { lastMessageAt: 'desc' },
+        { id: 'desc' },
+      ],
       take: limit + 1,
       ...(filters.cursor ? { cursor: { id: filters.cursor }, skip: 1 } : {}),
     }),

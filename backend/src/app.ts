@@ -13,6 +13,8 @@ import {
 } from './routes/mailbox.routes.js';
 import { conversationRouter } from './routes/conversation.routes.js';
 import { approvalRouter } from './routes/approval.routes.js';
+import { salesforceRouter } from './routes/salesforce.routes.js';
+import { meetingRouter } from './routes/meeting.routes.js';
 
 export function createApp() {
   const app = express();
@@ -46,6 +48,8 @@ export function createApp() {
   app.use('/api/oauth/microsoft', microsoftOauthCallbackRouter);
   app.use('/api/conversations', conversationRouter);
   app.use('/api/approvals', approvalRouter);
+  app.use('/api/salesforce', salesforceRouter);
+  app.use('/api/meetings', meetingRouter);
 
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     if (err instanceof AppError) {
