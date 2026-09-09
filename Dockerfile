@@ -1,5 +1,5 @@
 # Production image for Express API and BullMQ worker (same image, different start command).
-FROM node:20-bookworm-slim AS build
+FROM node:22-bookworm-slim AS build
 WORKDIR /app
 
 RUN apt-get update -y && apt-get install -y --no-install-recommends openssl ca-certificates \
@@ -19,7 +19,7 @@ COPY backend backend
 ENV DATABASE_URL=postgresql://build:build@127.0.0.1:5432/build
 RUN npm run build:api
 
-FROM node:20-bookworm-slim
+FROM node:22-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production
 
